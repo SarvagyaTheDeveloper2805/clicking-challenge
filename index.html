@@ -1,0 +1,300 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Click Challenge 🏆</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 24px 14px;
+      min-height: 100vh;
+      background: linear-gradient(135deg, #101329, #29205b);
+      color: #f4f4ff;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+
+    .container { max-width: 650px; margin: auto; }
+    h1 { color: #b5a8ff; font-size: 36px; }
+    .subtitle { color: #c6c6e8; }
+
+    .panel {
+      background: #191d3b;
+      border: 1px solid #393d68;
+      border-radius: 18px;
+      padding: 22px;
+      margin: 20px 0;
+    }
+
+    input {
+      width: 100%;
+      padding: 14px;
+      margin: 12px 0;
+      border: 1px solid #555a83;
+      border-radius: 9px;
+      background: #101329;
+      color: white;
+      font-size: 16px;
+    }
+
+    button {
+      border: 0;
+      border-radius: 10px;
+      padding: 13px 20px;
+      margin: 6px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:disabled { opacity: .5; cursor: not-allowed; }
+
+    #startBtn { background: #b5a8ff; color: #101329; }
+
+    #clickBtn {
+      width: 100%;
+      min-height: 105px;
+      margin-top: 15px;
+      background: #44e0ad;
+      color: #101329;
+      font-size: 27px;
+    }
+
+    .stats { display: flex; justify-content: space-around; gap: 12px; }
+    .stat { flex: 1; }
+    .number { color: #44e0ad; font-size: 34px; font-weight: bold; }
+    #status { min-height: 24px; color: #d2ceff; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+    th, td { padding: 12px 8px; border-bottom: 1px solid #393d68; text-align: left; }
+    th { color: #b5a8ff; }
+    footer { margin-top: 25px; color: #aaaaca; font-size: 12px; }
+  </style>
+</head>
+
+<body>
+  <main class="container">
+    <h1>⚡ Click Challenge</h1>
+    <p class="subtitle">Can you become the fastest clicker?</p>
+
+    <section class="panel">
+      <label for="playerName">Your player name</label>
+      <input id="playerName" maxlength="20"
+             placeholder="Enter your name"
+             autocomplete="nickname">
+
+      <div class="stats">
+        <div class="stat">
+          <p>TIME LEFT</p>
+          <div class="number" id="time">10</div>
+        </div>
+        <div class="stat">
+          <p>YOUR SCORE</p>
+          <div class="number" id="score">0</div>
+        </div>
+      </div>
+
+      <button id="startBtn">Start Game 🚀</button>
+      <button id="clickBtn" disabled>CLICK ME! 👆</button>
+      <p id="status" role="status" aria-live="polite">
+        Enter your name and start playing!
+      </p>
+    </section>
+
+    <section class="panel">
+      <h2>🏆 Top 10 Leaderboard</h2>
+      <p class="subtitle">The highest scores appear first.</p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Rank</th><th>Player</th><th>Score</th></tr>
+          </thead>
+          <tbody id="leaderboard">
+            <tr><td colspan="3">Leaderboard not connected yet.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <button id="refreshBtn">Refresh Scores 🔄</button>
+    </section>
+
+    <footer>Click Challenge • Play fair and beat your high score!</footer>
+  </main>
+
+  <script>
+    // We will fill these in after creating your Supabase project.
+    const SUPABASE_URL = "YOUR_SUPABASE_PROJECT_URL";
+    const SUPABASE_KEY = "YOUR_SUPABASE_PUBLISHABLE_KEY";
+
+    const nameInput = document.getElementById("playerName");
+    const startBtn = document.getElementById("startBtn");
+    const clickBtn = document.getElementById("clickBtn");
+    const timeDisplay = document.getElementById("time");
+    const scoreDisplay = document.getElementById("score");
+    const statusDisplay = document.getElementById("status");
+    const leaderboard = document.getElementById("leaderboard");
+    const refreshBtn = document.getElementById("refreshBtn");
+
+    let db = null;
+    let score = 0;
+    let timeLeft = 10;
+    let playing = false;
+    let timer = null;
+
+    function showMessage(message) {
+      statusDisplay.textContent = message;
+    }
+
+    function showTableMessage(message) {
+      leaderboard.replaceChildren();
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 3;
+      cell.textContent = message;
+      row.appendChild(cell);
+      leaderboard.appendChild(row);
+    }
+
+    function connectDatabase() {
+      if (
+        SUPABASE_URL.startsWith("https://") &&
+        !SUPABASE_URL.includes("YOUR_") &&
+        SUPABASE_KEY &&
+        !SUPABASE_KEY.includes("YOUR_") &&
+        window.supabase
+      ) {
+        db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      }
+    }
+
+    async function loadLeaderboard() {
+      if (!db) {
+        showTableMessage("Supabase connection will be configured soon!");
+        return;
+      }
+
+      showTableMessage("Loading scores...");
+
+      const { data, error } = await db
+        .from("scores")
+        .select("player_name, score")
+        .order("score", { ascending: false })
+        .order("created_at", { ascending: true })
+        .limit(10);
+
+      if (error) {
+        showTableMessage("Unable to load scores. Check database permissions.");
+        console.error("Leaderboard error:", error.message);
+        return;
+      }
+
+      if (!data || data.length === 0) {
+        showTableMessage("No scores yet. Be the first to play!");
+        return;
+      }
+
+      leaderboard.replaceChildren();
+
+      data.forEach((item, index) => {
+        const row = document.createElement("tr");
+        const rank = document.createElement("td");
+        const player = document.createElement("td");
+        const points = document.createElement("td");
+
+        rank.textContent = ["🥇", "🥈", "🥉"][index] || String(index + 1);
+        player.textContent = item.player_name;
+        points.textContent = String(item.score);
+
+        row.append(rank, player, points);
+        leaderboard.appendChild(row);
+      });
+    }
+
+    async function saveScore(playerName, finalScore) {
+      if (!db) {
+        showMessage("Game finished! Database connection is not configured yet.");
+        return;
+      }
+
+      showMessage("Saving your score...");
+
+      const { error } = await db.from("scores").insert([{
+        player_name: playerName,
+        score: finalScore
+      }]);
+
+      if (error) {
+        showMessage("Score could not be saved. Check database permissions.");
+        console.error("Save error:", error.message);
+        return;
+      }
+
+      showMessage("Score saved successfully! 🏆");
+      await loadLeaderboard();
+    }
+
+    function endGame() {
+      playing = false;
+      clearInterval(timer);
+      clickBtn.disabled = true;
+      startBtn.disabled = false;
+      nameInput.disabled = false;
+
+      const playerName = nameInput.value.trim();
+      saveScore(playerName, score);
+    }
+
+    startBtn.addEventListener("click", () => {
+      const playerName = nameInput.value.trim();
+
+      if (playerName.length < 1 || playerName.length > 20) {
+        showMessage("Enter a name between 1 and 20 characters.");
+        nameInput.focus();
+        return;
+      }
+
+      clearInterval(timer);
+      score = 0;
+      timeLeft = 10;
+      playing = true;
+
+      scoreDisplay.textContent = "0";
+      timeDisplay.textContent = "10";
+      showMessage("GO! GO! GO! 🔥");
+
+      startBtn.disabled = true;
+      clickBtn.disabled = false;
+      nameInput.disabled = true;
+
+      timer = setInterval(() => {
+        timeLeft--;
+        timeDisplay.textContent = String(timeLeft);
+
+        if (timeLeft <= 0) {
+          endGame();
+        }
+      }, 1000);
+    });
+
+    clickBtn.addEventListener("click", () => {
+      if (!playing) return;
+      score++;
+      scoreDisplay.textContent = String(score);
+    });
+
+    refreshBtn.addEventListener("click", loadLeaderboard);
+
+    connectDatabase();
+    loadLeaderboard();
+  </script>
+</body>
+</html>
